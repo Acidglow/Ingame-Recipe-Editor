@@ -1,0 +1,13 @@
+{
+  "itemGroup.acidglows_ingame_recipe_editor": "Example Mod Tab",
+  "block.acidglows_ingame_recipe_editor.example_block": "Example Block",
+  "item.acidglows_ingame_recipe_editor.example_item": "Example Item",
+
+  "acidglows_ingame_recipe_editor.configuration.title": "Acidglow's Ingame Recipe Editor Configs",
+  "acidglows_ingame_recipe_editor.configuration.section.acidglows_ingame_recipe_editor.common.toml": "Acidglow's Ingame Recipe Editor Configs",
+  "acidglows_ingame_recipe_editor.configuration.section.acidglows_ingame_recipe_editor.common.toml.title": "Acidglow's Ingame Recipe Editor Configs",
+  "acidglows_ingame_recipe_editor.configuration.items": "Item List",
+  "acidglows_ingame_recipe_editor.configuration.logDirtBlock": "Log Dirt Block",
+  "acidglows_ingame_recipe_editor.configuration.magicNumberIntroduction": "Magic Number Text",
+  "acidglows_ingame_recipe_editor.configuration.magicNumber": "Magic Number"
+}
