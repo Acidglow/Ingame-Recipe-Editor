@@ -1,13 +1,31 @@
 {
-  "itemGroup.acidglows_ingame_recipe_editor": "Example Mod Tab",
-  "block.acidglows_ingame_recipe_editor.example_block": "Example Block",
-  "item.acidglows_ingame_recipe_editor.example_item": "Example Item",
-
   "acidglows_ingame_recipe_editor.configuration.title": "Acidglow's Ingame Recipe Editor Configs",
   "acidglows_ingame_recipe_editor.configuration.section.acidglows_ingame_recipe_editor.common.toml": "Acidglow's Ingame Recipe Editor Configs",
   "acidglows_ingame_recipe_editor.configuration.section.acidglows_ingame_recipe_editor.common.toml.title": "Acidglow's Ingame Recipe Editor Configs",
-  "acidglows_ingame_recipe_editor.configuration.items": "Item List",
-  "acidglows_ingame_recipe_editor.configuration.logDirtBlock": "Log Dirt Block",
-  "acidglows_ingame_recipe_editor.configuration.magicNumberIntroduction": "Magic Number Text",
-  "acidglows_ingame_recipe_editor.configuration.magicNumber": "Magic Number"
+  "acidglows_ingame_recipe_editor.configuration.onlyAdminOrCreative": "Restrict Recipe Editor",
+  "acidglows_ingame_recipe_editor.configuration.operatorPermissionLevel": "Operator Permission Level",
+
+  "command.acidglows_ingame_recipe_editor.player_required": "Only a player can open the recipe editor.",
+  "command.acidglows_ingame_recipe_editor.no_permission": "You do not have permission to use the recipe editor.",
+  "command.acidglows_ingame_recipe_editor.restore_all_success": "All recipe changes have been restored to their defaults.",
+  "command.acidglows_ingame_recipe_editor.restore_all_failed": "The recipe reload failed. The reset will be retried on the next reload.",
+  "screen.acidglows_ingame_recipe_editor.title": "Ingame Recipe Editor",
+  "screen.acidglows_ingame_recipe_editor.item_book": "Item Book"
+  ,"screen.acidglows_ingame_recipe_editor.all_items": "All items"
+  ,"screen.acidglows_ingame_recipe_editor.shaped_recipe": "Shaped"
+  ,"screen.acidglows_ingame_recipe_editor.shapeless_recipe": "Shapeless"
+  ,"screen.acidglows_ingame_recipe_editor.crafting_table": "Crafting Table"
+  ,"screen.acidglows_ingame_recipe_editor.furnace": "Furnace"
+  ,"screen.acidglows_ingame_recipe_editor.blast_furnace": "Blast Furnace"
+  ,"screen.acidglows_ingame_recipe_editor.campfire": "Campfire"
+  ,"screen.acidglows_ingame_recipe_editor.remove": "Remove Recipe"
+  ,"screen.acidglows_ingame_recipe_editor.restore_default_recipe": "Restore Default Recipe"
+  ,"screen.acidglows_ingame_recipe_editor.removed_recipes": "Removed Recipes (%s)"
+  ,"screen.acidglows_ingame_recipe_editor.removed_recipes_title": "Removed Recipes:"
+  ,"screen.acidglows_ingame_recipe_editor.no_default_recipe": "No default recipe"
+  ,"screen.acidglows_ingame_recipe_editor.hide": "Hide Item"
+  ,"screen.acidglows_ingame_recipe_editor.reveal_item": "Reveal Item"
+  ,"screen.acidglows_ingame_recipe_editor.shape": "Recipe Shape"
+  ,"screen.acidglows_ingame_recipe_editor.type": "Recipe Type"
+  ,"screen.acidglows_ingame_recipe_editor.save": "Save Recipe"
 }
