@@ -6,6 +6,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 import org.slf4j.Logger;
 import acidglow.ingamerecipeeditor.menu.RecipeEditorMenus;
+import acidglow.ingamerecipeeditor.gametest.RecipeEditorGameTests;
 
 @Mod(AcidglowsIngameRecipeEditor.MODID)
 public class AcidglowsIngameRecipeEditor {
@@ -15,5 +16,6 @@ public class AcidglowsIngameRecipeEditor {
     public AcidglowsIngameRecipeEditor(ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
         RecipeEditorMenus.register(modContainer.getEventBus());
+        RecipeEditorGameTests.register(modContainer.getEventBus());
     }
 }

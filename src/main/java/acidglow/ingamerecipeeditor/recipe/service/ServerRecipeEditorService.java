@@ -21,23 +21,8 @@ public final class ServerRecipeEditorService {
         this.adapters = adapters;
     }
 
-    public RecipeIndex buildIndex(ServerLevel level) {
-        RecipeIndex index = new RecipeIndex();
-        level.recipeAccess().getRecipes().forEach(holder -> capture(level, holder).ifPresent(index::add));
-        return index;
-    }
-
     public Optional<RecipeSnapshot> capture(ServerLevel level, RecipeKey key) {
         return level.recipeAccess().byKey(key.recipeId()).flatMap(holder -> capture(level, holder));
-    }
-
-    public CompletableFuture<Void> saveOverride(ServerLevel level, RecipeSnapshot replacement) {
-        RecipeEditorSavedData savedData = RecipeEditorSavedData.get(level);
-        RecipeOverlay overlay = savedData.createRecipeOverlay();
-        capture(level, replacement.key()).ifPresent(overlay::addDefault);
-        overlay.saveOverride(replacement);
-        savedData.replaceRecipeOverlay(overlay);
-        return RecipeReloadService.reload(level.getServer());
     }
 
     public CompletableFuture<Void> addCustom(ServerLevel level, RecipeSnapshot snapshot) {

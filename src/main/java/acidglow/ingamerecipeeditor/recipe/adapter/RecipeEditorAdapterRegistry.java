@@ -22,7 +22,4 @@ public final class RecipeEditorAdapterRegistry {
         return Optional.ofNullable(adapters.get(recipeTypeId));
     }
 
-    public Map<Identifier, RecipeEditorAdapter> adapters() {
-        return Map.copyOf(adapters);
-    }
 }

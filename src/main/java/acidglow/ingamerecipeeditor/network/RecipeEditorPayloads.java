@@ -43,6 +43,7 @@ import acidglow.ingamerecipeeditor.recipe.model.RecipeJsonCodec;
 import acidglow.ingamerecipeeditor.recipe.model.RecipeSnapshot;
 import acidglow.ingamerecipeeditor.recipe.model.RecipeState;
 import acidglow.ingamerecipeeditor.recipe.service.ServerRecipeEditorService;
+import acidglow.ingamerecipeeditor.recipe.service.RecipeIngredientFactory;
 import acidglow.ingamerecipeeditor.menu.RecipeEditorMenu;
 
 /** Registers the server-authoritative payloads used by the recipe editor menu. */
@@ -122,7 +123,7 @@ public final class RecipeEditorPayloads {
             }
             try {
                 completeMutation(player, service.restoreDefault(player.level(), key), "Default recipe restored.",
-                    () -> refreshRecipePreview(player, key));
+                    () -> refreshRecipePreviewAfterMutation(player, key, false));
             } catch (IllegalArgumentException exception) {
                 rejectMutation(player, exception.getMessage());
             }
@@ -143,15 +144,12 @@ public final class RecipeEditorPayloads {
             rejectMutation(player, "That recipe type is not safely editable yet.");
             return;
         }
-        boolean hasOriginalDefault = !(overlay.state(key).orElse(null) instanceof RecipeState.NewCustomRecipe);
         try {
             completeMutation(player, service.remove(player.level(), key), "Recipe removed.",
-                () -> {
-                    sendSelection(player, key, previewOutputId.get(), hasOriginalDefault
-                        ? RecipeEditorSelectionPayload.Action.RESTORE_DEFAULT
-                        : RecipeEditorSelectionPayload.Action.NO_DEFAULT);
-                    refreshRecipePreviewKeepingSelection(player);
-                });
+                // The next live recipe remains removable. Restoring a default is
+                // deliberately available only after the user selects it from the
+                // Removed Recipes list.
+                () -> refreshRecipePreviewAfterMutation(player, key, false));
         } catch (IllegalArgumentException exception) {
             rejectMutation(player, exception.getMessage());
         }
@@ -198,7 +196,7 @@ public final class RecipeEditorPayloads {
         var savedData = acidglow.ingamerecipeeditor.data.RecipeEditorSavedData.get(player.level());
         savedData.setHidden(payload.itemId(), payload.hidden());
         if (payload.hidden()) {
-            acidglow.ingamerecipeeditor.recipe.service.HiddenItemPurger.purgeLoadedItems(
+            acidglow.ingamerecipeeditor.recipe.service.HiddenItemPurger.purgeAccessibleWorld(
                 player.level().getServer(), savedData.hiddenItems()
             );
         }
@@ -273,7 +271,16 @@ public final class RecipeEditorPayloads {
 
         Item input = BuiltInRegistries.ITEM.getValue(payload.inputItemId());
         Item output = BuiltInRegistries.ITEM.getValue(payload.outputItemId());
-        Recipe<?> recipe = createCookingRecipe(payload, input, output);
+        Optional<net.minecraft.resources.Identifier> selectedInputTag = player.containerMenu instanceof RecipeEditorMenu menu
+            ? menu.selectedIngredientTag(5)
+            : Optional.empty();
+        if (player.containerMenu instanceof RecipeEditorMenu menu
+            && menu.hasDisplayedRecipeBaseline()
+            && !menu.hasDisplayedRecipeChanges()) {
+            rejectMutation(player, "The displayed recipe has no changes to save.");
+            return;
+        }
+        Recipe<?> recipe = createCookingRecipe(payload, input, output, selectedInputTag);
         RecipeKey key = CustomRecipeIdFactory.create(payload.recipeTypeId());
         RecipeHolder<?> holder = new RecipeHolder<>(key.recipeId(), recipe);
         java.util.Optional<RecipeSnapshot> snapshot = RecipeJsonCodec.encode(holder, payload.outputItemId(), player.level().registryAccess())
@@ -286,7 +293,7 @@ public final class RecipeEditorPayloads {
         try {
             ServerRecipeEditorService service = new ServerRecipeEditorService(BuiltinRecipeEditorAdapters.create());
             completeMutation(player, service.addCustom(player.level(), snapshot.get()), "New cooking recipe saved.",
-                () -> refreshRecipePreview(player));
+                () -> refreshRecipePreviewAfterMutation(player, key, false));
         } catch (IllegalArgumentException exception) {
             rejectMutation(player, exception.getMessage());
         }
@@ -313,10 +320,17 @@ public final class RecipeEditorPayloads {
             rejectMutation(player, "A crafting recipe needs at least one ingredient.");
             return;
         }
+        if (menu.hasDisplayedRecipeBaseline() && !menu.hasDisplayedRecipeChanges()) {
+            rejectMutation(player, "The displayed recipe has no changes to save.");
+            return;
+        }
 
         Recipe<?> recipe;
         try {
-            recipe = createCraftingRecipe(ingredients, outputStack, menu.craftingRecipeKind());
+            List<Optional<net.minecraft.resources.Identifier>> ingredientTags = java.util.stream.IntStream.rangeClosed(1, 9)
+                .mapToObj(menu::selectedIngredientTag)
+                .toList();
+            recipe = createCraftingRecipe(ingredients, ingredientTags, outputStack, menu.craftingRecipeKind());
         } catch (IllegalArgumentException exception) {
             rejectMutation(player, exception.getMessage());
             return;
@@ -334,7 +348,7 @@ public final class RecipeEditorPayloads {
         try {
             ServerRecipeEditorService service = new ServerRecipeEditorService(BuiltinRecipeEditorAdapters.create());
             completeMutation(player, service.addCustom(player.level(), snapshot.get()), "New crafting recipe saved.",
-                () -> refreshRecipePreview(player));
+                () -> refreshRecipePreviewAfterMutation(player, key, false));
         } catch (IllegalArgumentException exception) {
             rejectMutation(player, exception.getMessage());
         }
@@ -378,18 +392,13 @@ public final class RecipeEditorPayloads {
 
     /** Rebuilds the ghost grid, optionally retaining an already selected remove/restore action. */
     private static void populateRecipePreview(ServerPlayer player, RecipeEditorMenu menu, Item output, boolean updateSelection) {
-        List<RecipeHolder<?>> recipes = player.level().recipeAccess().getRecipes().stream()
-            .filter(recipeHolder -> isRecipeOfType(recipeHolder, menu.recipeType()))
-            .filter(recipeHolder -> recipeOutputIs(recipeHolder.value(), output))
-            .sorted(Comparator.comparing(recipeHolder -> recipeHolder.id().toString()))
-            .toList();
+        List<RecipeHolder<?>> recipes = recipesForOutput(player, menu, output);
         if (recipes.isEmpty()) {
             menu.setCraftingPreview(List.of(), 0);
+            menu.clearDisplayedRecipeBaseline();
             menu.setRecipeNavigation(0, 0);
             sendRemovedRecipeList(player, menu, output);
-            removedDefaultForOutput(player, menu, output).ifPresent(key ->
-                sendSelection(player, key, BuiltInRegistries.ITEM.getKey(output), RecipeEditorSelectionPayload.Action.RESTORE_DEFAULT)
-            );
+            sendNoActiveSelection(player, menu, output);
             sendPreviewTags(player, menu, emptyPreviewTags());
             return;
         }
@@ -449,7 +458,9 @@ public final class RecipeEditorPayloads {
             menu.setCraftingPreview(List.of(), 0);
         }
         menu.setRecipeNavigation(position, recipeCount);
+        menu.setPreviewIngredientTags(previewTags);
         sendPreviewTags(player, menu, previewTags);
+        menu.captureDisplayedRecipeBaseline();
     }
 
     private static List<Optional<net.minecraft.resources.Identifier>> emptyPreviewTags() {
@@ -482,6 +493,16 @@ public final class RecipeEditorPayloads {
         }
     }
 
+    /** Clears the Remove Recipe button without selecting a deleted default to restore. */
+    private static void sendNoActiveSelection(ServerPlayer player, RecipeEditorMenu menu, Item output) {
+        net.minecraft.resources.Identifier outputItemId = BuiltInRegistries.ITEM.getKey(output);
+        RecipeKey placeholderKey = new RecipeKey(
+            ResourceKey.create(Registries.RECIPE, outputItemId),
+            editorRecipeTypeId(menu.recipeType())
+        );
+        sendSelection(player, placeholderKey, outputItemId, RecipeEditorSelectionPayload.Action.NONE);
+    }
+
     private static Optional<net.minecraft.resources.Identifier> previewOutputId(ServerPlayer player) {
         if (player.containerMenu instanceof RecipeEditorMenu menu) {
             ItemStack output = menu.getSlot(0).getItem();
@@ -495,6 +516,7 @@ public final class RecipeEditorPayloads {
     private static void clearRecipePreview(ServerPlayer player) {
         if (player.containerMenu instanceof RecipeEditorMenu menu) {
             menu.setCraftingPreview(List.of(), 0);
+            menu.clearDisplayedRecipeBaseline();
             menu.setRecipeNavigation(0, 0);
             menu.broadcastChanges();
         }
@@ -502,28 +524,26 @@ public final class RecipeEditorPayloads {
 
     /** Rebuilds the shown recipe from the newly reloaded server recipe list. */
     private static void refreshRecipePreview(ServerPlayer player) {
-        if (player.containerMenu instanceof RecipeEditorMenu menu) {
-            ItemStack output = menu.getSlot(0).getItem();
-            if (!output.isEmpty()) {
-                populateRecipePreview(player, menu, output.getItem());
-                menu.broadcastChanges();
-            }
-        }
+        rebuildRecipePreview(player, null, false);
     }
 
-    /** Shows the next surviving recipe without replacing the button's restore state. */
-    private static void refreshRecipePreviewKeepingSelection(ServerPlayer player) {
-        if (player.containerMenu instanceof RecipeEditorMenu menu) {
-            ItemStack output = menu.getSlot(0).getItem();
-            if (!output.isEmpty()) {
-                populateRecipePreview(player, menu, output.getItem(), false);
-                menu.broadcastChanges();
-            }
-        }
+    /**
+     * Rebuild immediately and once more from the following server task. Recipe
+     * reload completion can precede the recipe access swap by one task, so the
+     * second pass prevents a newly saved surviving recipe from briefly looking
+     * like there are no recipes after a removal.
+     */
+    private static void refreshRecipePreviewAfterMutation(ServerPlayer player, RecipeKey preferredRecipe, boolean keepCurrentSelection) {
+        rebuildRecipePreview(player, preferredRecipe, keepCurrentSelection);
+        player.level().getServer().execute(() -> rebuildRecipePreview(player, preferredRecipe, keepCurrentSelection));
     }
 
-    /** Rebuilds the grid with one exact restored recipe selected. */
-    private static void refreshRecipePreview(ServerPlayer player, RecipeKey restoredKey) {
+    /**
+     * Re-queries every live recipe for the current output after a reload. This is
+     * deliberately shared by save, remove, and restore so navigation is never
+     * left with a count or position from the recipe list before the mutation.
+     */
+    private static void rebuildRecipePreview(ServerPlayer player, RecipeKey preferredRecipe, boolean keepCurrentSelection) {
         if (!(player.containerMenu instanceof RecipeEditorMenu menu)) {
             return;
         }
@@ -531,31 +551,27 @@ public final class RecipeEditorPayloads {
         if (output.isEmpty()) {
             return;
         }
-        List<RecipeHolder<?>> recipes = player.level().recipeAccess().getRecipes().stream()
-            .filter(recipeHolder -> isRecipeOfType(recipeHolder, menu.recipeType()))
-            .filter(recipeHolder -> recipeOutputIs(recipeHolder.value(), output.getItem()))
-            .sorted(Comparator.comparing(recipeHolder -> recipeHolder.id().toString()))
-            .toList();
-        int restoredPosition = java.util.stream.IntStream.range(0, recipes.size())
-            .filter(index -> RecipeKey.from(recipes.get(index)).equals(restoredKey))
+        List<RecipeHolder<?>> recipes = recipesForOutput(player, menu, output.getItem());
+        int position = preferredRecipe == null ? menu.recipePosition() : java.util.stream.IntStream.range(0, recipes.size())
+            .filter(index -> RecipeKey.from(recipes.get(index)).equals(preferredRecipe))
             .findFirst()
-            .orElse(0);
-        menu.setRecipeNavigation(restoredPosition, recipes.size());
-        populateRecipePreview(player, menu, output.getItem());
+            .orElse(menu.recipePosition());
+        menu.setRecipeNavigation(Math.clamp(position, 0, Math.max(0, recipes.size() - 1)), recipes.size());
+        populateRecipePreview(player, menu, output.getItem(), !keepCurrentSelection);
         menu.broadcastChanges();
     }
 
-    /** Finds a persisted deleted default recipe when no live recipe currently produces this output. */
-    private static Optional<RecipeKey> removedDefaultForOutput(ServerPlayer player, RecipeEditorMenu menu, Item output) {
-        net.minecraft.resources.Identifier outputItemId = BuiltInRegistries.ITEM.getKey(output);
-        return acidglow.ingamerecipeeditor.data.RecipeEditorSavedData.get(player.level()).createRecipeOverlay()
-            .tombstones().stream()
-            .map(RecipeState.RemovedDefaultRecipe::defaultSnapshot)
-            .filter(snapshot -> snapshot.outputItemId().equals(outputItemId))
-            .filter(snapshot -> isRecipeTypeIdForEditor(snapshot.key().recipeTypeId(), menu.recipeType()))
-            .sorted(Comparator.comparing(snapshot -> snapshot.key().identifier().toString()))
-            .map(RecipeSnapshot::key)
-            .findFirst();
+    /** Rebuilds the grid with one exact saved or restored recipe selected. */
+    private static void refreshRecipePreview(ServerPlayer player, RecipeKey preferredRecipe) {
+        rebuildRecipePreview(player, preferredRecipe, false);
+    }
+
+    private static List<RecipeHolder<?>> recipesForOutput(ServerPlayer player, RecipeEditorMenu menu, Item output) {
+        return player.level().recipeAccess().getRecipes().stream()
+            .filter(recipeHolder -> isRecipeOfType(recipeHolder, menu.recipeType()))
+            .filter(recipeHolder -> recipeOutputIs(recipeHolder.value(), output))
+            .sorted(Comparator.comparing(recipeHolder -> recipeHolder.id().toString()))
+            .toList();
     }
 
     /** Updates the client-only selector with every deleted default matching this output and editor type. */
@@ -633,11 +649,7 @@ public final class RecipeEditorPayloads {
         if (output.isEmpty()) {
             return false;
         }
-        List<RecipeHolder<?>> recipes = player.level().recipeAccess().getRecipes().stream()
-            .filter(recipeHolder -> isRecipeOfType(recipeHolder, menu.recipeType()))
-            .filter(recipeHolder -> recipeOutputIs(recipeHolder.value(), output.getItem()))
-            .sorted(Comparator.comparing(recipeHolder -> recipeHolder.id().toString()))
-            .toList();
+        List<RecipeHolder<?>> recipes = recipesForOutput(player, menu, output.getItem());
         if (recipes.isEmpty()) {
             return false;
         }
@@ -726,7 +738,7 @@ public final class RecipeEditorPayloads {
         for (net.minecraft.core.Holder<Item> holder : BuiltInRegistries.ITEM.getTagOrEmpty(tag)) {
             options.add(new ItemStack(holder.value()));
         }
-        if (menu.selectPreviewTag(payload.slotIndex(), options)) {
+        if (menu.selectPreviewTag(payload.slotIndex(), payload.tagId(), options)) {
             menu.broadcastChanges();
         }
     }
@@ -789,10 +801,15 @@ public final class RecipeEditorPayloads {
         }
     }
 
-    private static Recipe<?> createCookingRecipe(SaveCookingRecipePayload payload, Item input, Item output) {
+    private static Recipe<?> createCookingRecipe(
+        SaveCookingRecipePayload payload,
+        Item input,
+        Item output,
+        Optional<net.minecraft.resources.Identifier> selectedInputTag
+    ) {
         Recipe.CommonInfo commonInfo = new Recipe.CommonInfo(true);
         AbstractCookingRecipe.CookingBookInfo bookInfo = new AbstractCookingRecipe.CookingBookInfo(CookingBookCategory.MISC, "");
-        Ingredient ingredient = Ingredient.of(input);
+        Ingredient ingredient = selectedInputTag.map(RecipeIngredientFactory::fromTag).orElseGet(() -> Ingredient.of(input));
         ItemStackTemplate result = new ItemStackTemplate(output, payload.outputCount());
         return switch (payload.recipeTypeId().getPath()) {
             case "smelting" -> new SmeltingRecipe(commonInfo, bookInfo, ingredient, result, payload.experience(), payload.cookingTime());
@@ -803,14 +820,19 @@ public final class RecipeEditorPayloads {
         };
     }
 
-    private static Recipe<?> createCraftingRecipe(List<ItemStack> ingredients, ItemStack output, int recipeKind) {
+    private static Recipe<?> createCraftingRecipe(
+        List<ItemStack> ingredients,
+        List<Optional<net.minecraft.resources.Identifier>> ingredientTags,
+        ItemStack output,
+        int recipeKind
+    ) {
         Recipe.CommonInfo commonInfo = new Recipe.CommonInfo(true);
         CraftingRecipe.CraftingBookInfo bookInfo = new CraftingRecipe.CraftingBookInfo(CraftingBookCategory.MISC, "");
         ItemStackTemplate result = new ItemStackTemplate(output.getItem(), output.getCount());
         if (recipeKind == 2) {
-            List<Ingredient> shapelessIngredients = ingredients.stream()
-                .filter(stack -> !stack.isEmpty())
-                .map(stack -> Ingredient.of(stack.getItem()))
+            List<Ingredient> shapelessIngredients = java.util.stream.IntStream.range(0, ingredients.size())
+                .filter(index -> !ingredients.get(index).isEmpty())
+                .mapToObj(index -> ingredientAt(ingredients, ingredientTags, index))
                 .toList();
             return new ShapelessRecipe(commonInfo, bookInfo, result, shapelessIngredients);
         }
@@ -832,7 +854,7 @@ public final class RecipeEditorPayloads {
         if (maxColumn < 0) {
             throw new IllegalArgumentException("A crafting recipe needs at least one ingredient.");
         }
-        java.util.Map<Item, Character> characters = new java.util.LinkedHashMap<>();
+        java.util.Map<String, Character> characters = new java.util.LinkedHashMap<>();
         java.util.Map<Character, Ingredient> key = new java.util.LinkedHashMap<>();
         List<String> pattern = new java.util.ArrayList<>();
         for (int row = minRow; row <= maxRow; row++) {
@@ -842,14 +864,28 @@ public final class RecipeEditorPayloads {
                 if (stack.isEmpty()) {
                     line.append(' ');
                 } else {
-                    char character = characters.computeIfAbsent(stack.getItem(), item -> (char)('A' + characters.size()));
-                    key.putIfAbsent(character, Ingredient.of(stack.getItem()));
+                    Ingredient ingredient = ingredientAt(ingredients, ingredientTags, row * 3 + column);
+                    String ingredientKey = ingredientTags.get(row * 3 + column)
+                        .map(tagId -> "tag:" + tagId)
+                        .orElseGet(() -> "item:" + BuiltInRegistries.ITEM.getKey(stack.getItem()));
+                    char character = characters.computeIfAbsent(ingredientKey, ignored -> (char)('A' + characters.size()));
+                    key.putIfAbsent(character, ingredient);
                     line.append(character);
                 }
             }
             pattern.add(line.toString());
         }
         return new ShapedRecipe(commonInfo, bookInfo, ShapedRecipePattern.of(key, pattern), result);
+    }
+
+    private static Ingredient ingredientAt(
+        List<ItemStack> ingredients,
+        List<Optional<net.minecraft.resources.Identifier>> ingredientTags,
+        int index
+    ) {
+        return ingredientTags.get(index)
+            .<Ingredient>map(RecipeIngredientFactory::fromTag)
+            .orElseGet(() -> Ingredient.of(ingredients.get(index).getItem()));
     }
 
     private static boolean isSupportedCookingType(net.minecraft.resources.Identifier typeId) {

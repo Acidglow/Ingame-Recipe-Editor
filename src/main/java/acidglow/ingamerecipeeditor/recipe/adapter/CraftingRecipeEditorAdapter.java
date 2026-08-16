@@ -12,16 +12,9 @@ import net.minecraft.world.item.crafting.ShapelessRecipe;
 /** Safe output discovery for the two standard data-driven crafting forms. */
 public final class CraftingRecipeEditorAdapter implements RecipeEditorAdapter {
     private static final Identifier TYPE_ID = Identifier.withDefaultNamespace("crafting");
-    private static final RecipeEditorLayout LAYOUT = new RecipeEditorLayout(9, true, false);
-
     @Override
     public Identifier recipeTypeId() {
         return TYPE_ID;
-    }
-
-    @Override
-    public RecipeEditorLayout layout() {
-        return LAYOUT;
     }
 
     @Override

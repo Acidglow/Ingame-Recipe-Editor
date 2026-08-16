@@ -10,7 +10,6 @@ import net.minecraft.world.item.crafting.SingleRecipeInput;
 
 /** Read-only recipe identity adapter shared by the four vanilla cooking families. */
 public final class CookingRecipeEditorAdapter implements RecipeEditorAdapter {
-    private static final RecipeEditorLayout LAYOUT = new RecipeEditorLayout(1, false, true);
     private final Identifier recipeTypeId;
 
     public CookingRecipeEditorAdapter(Identifier recipeTypeId) {
@@ -20,11 +19,6 @@ public final class CookingRecipeEditorAdapter implements RecipeEditorAdapter {
     @Override
     public Identifier recipeTypeId() {
         return recipeTypeId;
-    }
-
-    @Override
-    public RecipeEditorLayout layout() {
-        return LAYOUT;
     }
 
     @Override

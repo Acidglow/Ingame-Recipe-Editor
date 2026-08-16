@@ -9,6 +9,7 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.DataSlot;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.resources.Identifier;
 
 /**
  * Temporary editor inventory. Its contents are returned to the player when the
@@ -29,6 +30,8 @@ public final class RecipeEditorMenu extends AbstractContainerMenu {
     private final Container editorSlots;
     private final boolean[] creativePanelItems = new boolean[EDITOR_SLOT_COUNT];
     private java.util.List<java.util.List<ItemStack>> previewIngredientOptions = java.util.List.of();
+    private java.util.List<java.util.Optional<Identifier>> selectedIngredientTags = emptyIngredientTags();
+    private RecipeDraftBaseline displayedRecipeBaseline;
     private int previewCycleTicks;
     private int previewCycleIndex;
     private final DataSlot craftingRecipeKind = this.addDataSlot(DataSlot.standalone());
@@ -68,6 +71,16 @@ public final class RecipeEditorMenu extends AbstractContainerMenu {
         }
         this.editorSlots.setItem(slotIndex, stack.copyWithCount(1));
         this.creativePanelItems[slotIndex] = true;
+        if (slotIndex == INPUT_SLOT) {
+            this.clearDisplayedRecipeBaseline();
+        }
+        if (slotIndex >= CRAFTING_SLOT_START) {
+            // A manual edit turns this preview slot into a fixed draft
+            // ingredient. Otherwise the old tag/ingredient cycle will write
+            // its original recipe item back into the slot on the next tick.
+            this.setPreviewIngredient(slotIndex, java.util.List.of(stack.copyWithCount(1)));
+            this.clearSelectedIngredientTag(slotIndex);
+        }
         return true;
     }
 
@@ -88,7 +101,11 @@ public final class RecipeEditorMenu extends AbstractContainerMenu {
         this.editorSlots.setItem(slotIndex, ItemStack.EMPTY);
         this.creativePanelItems[slotIndex] = false;
         if (slotIndex == INPUT_SLOT) {
+            this.clearDisplayedRecipeBaseline();
             this.clearCraftingPreview();
+        } else {
+            this.setPreviewIngredient(slotIndex, java.util.List.of());
+            this.clearSelectedIngredientTag(slotIndex);
         }
         return true;
     }
@@ -105,28 +122,82 @@ public final class RecipeEditorMenu extends AbstractContainerMenu {
     }
 
     /** Replaces one recipe-preview slot's cycling set with a user-selected tag. */
-    public boolean selectPreviewTag(int slotIndex, java.util.List<ItemStack> options) {
+    public boolean selectPreviewTag(int slotIndex, Identifier tagId, java.util.List<ItemStack> options) {
         int previewIndex = slotIndex - CRAFTING_SLOT_START;
         if (previewIndex < 0 || previewIndex >= 9 || options.isEmpty()) {
             return false;
+        }
+        java.util.List<ItemStack> cleanedOptions = options.stream()
+            .filter(stack -> !stack.isEmpty())
+            .map(stack -> stack.copyWithCount(1))
+            .toList();
+        if (cleanedOptions.isEmpty()) {
+            return false;
+        }
+        this.setPreviewIngredient(slotIndex, cleanedOptions);
+        this.setSelectedIngredientTag(slotIndex, tagId);
+        this.updatePreviewIngredientStacks();
+        return true;
+    }
+
+    /** The tag explicitly selected for a draft ingredient, if any. */
+    public java.util.Optional<Identifier> selectedIngredientTag(int slotIndex) {
+        int previewIndex = slotIndex - CRAFTING_SLOT_START;
+        return previewIndex >= 0 && previewIndex < this.selectedIngredientTags.size()
+            ? this.selectedIngredientTags.get(previewIndex)
+            : java.util.Optional.empty();
+    }
+
+    /** Retains the source tags of a loaded recipe while its items cycle in the preview. */
+    public void setPreviewIngredientTags(java.util.List<java.util.Optional<Identifier>> tags) {
+        if (tags.size() != 9) {
+            throw new IllegalArgumentException("Recipe preview must contain exactly nine ingredient tags");
+        }
+        this.selectedIngredientTags = java.util.List.copyOf(tags);
+    }
+
+    /** Replaces one slot's cycling source when the player edits the recipe draft. */
+    private void setPreviewIngredient(int slotIndex, java.util.List<ItemStack> options) {
+        int previewIndex = slotIndex - CRAFTING_SLOT_START;
+        if (previewIndex < 0 || previewIndex >= 9) {
+            return;
         }
         java.util.List<java.util.List<ItemStack>> updatedOptions = new java.util.ArrayList<>(this.previewIngredientOptions);
         while (updatedOptions.size() <= previewIndex) {
             updatedOptions.add(java.util.List.of());
         }
         updatedOptions.set(previewIndex, options.stream().filter(stack -> !stack.isEmpty()).map(stack -> stack.copyWithCount(1)).toList());
-        if (updatedOptions.get(previewIndex).isEmpty()) {
-            return false;
-        }
         this.previewIngredientOptions = java.util.List.copyOf(updatedOptions);
         this.previewCycleTicks = 0;
         this.previewCycleIndex = 0;
-        this.updatePreviewIngredientStacks();
-        return true;
     }
 
     public int craftingRecipeKind() {
         return this.craftingRecipeKind.get();
+    }
+
+    /** Records the server-owned editable state after a live recipe has been loaded into the editor. */
+    public void captureDisplayedRecipeBaseline() {
+        this.displayedRecipeBaseline = RecipeDraftBaseline.capture(
+            this.editorSlots.getItem(INPUT_SLOT), this.previewIngredientOptions, this.selectedIngredientTags,
+            this.craftingRecipeKind(), this.recipeType()
+        );
+    }
+
+    /** True when the currently displayed live recipe has been changed in an editable way. */
+    public boolean hasDisplayedRecipeChanges() {
+        return this.displayedRecipeBaseline != null && !this.displayedRecipeBaseline.matches(
+            this.editorSlots.getItem(INPUT_SLOT), this.previewIngredientOptions, this.selectedIngredientTags,
+            this.craftingRecipeKind(), this.recipeType()
+        );
+    }
+
+    public boolean hasDisplayedRecipeBaseline() {
+        return this.displayedRecipeBaseline != null;
+    }
+
+    public void clearDisplayedRecipeBaseline() {
+        this.displayedRecipeBaseline = null;
     }
 
     /** Changes only the unsaved crafting draft; it does not edit any game recipe. */
@@ -139,6 +210,7 @@ public final class RecipeEditorMenu extends AbstractContainerMenu {
     }
 
     public void setRecipeType(int type) {
+        this.clearDisplayedRecipeBaseline();
         this.recipeType.set(type);
         this.recipePosition.set(0);
         this.recipeCount.set(0);
@@ -167,6 +239,7 @@ public final class RecipeEditorMenu extends AbstractContainerMenu {
             this.creativePanelItems[index] = false;
         }
         this.previewIngredientOptions = java.util.List.of();
+        this.selectedIngredientTags = emptyIngredientTags();
         this.previewCycleTicks = 0;
         this.previewCycleIndex = 0;
         this.craftingRecipeKind.set(0);
@@ -183,6 +256,34 @@ public final class RecipeEditorMenu extends AbstractContainerMenu {
                 this.creativePanelItems[CRAFTING_SLOT_START + index] = true;
             }
         }
+    }
+
+    private void setSelectedIngredientTag(int slotIndex, Identifier tagId) {
+        int previewIndex = slotIndex - CRAFTING_SLOT_START;
+        if (previewIndex < 0 || previewIndex >= 9) {
+            return;
+        }
+        java.util.List<java.util.Optional<Identifier>> updatedTags = new java.util.ArrayList<>(this.selectedIngredientTags);
+        updatedTags.set(previewIndex, java.util.Optional.of(tagId));
+        this.selectedIngredientTags = java.util.List.copyOf(updatedTags);
+    }
+
+    private void clearSelectedIngredientTag(int slotIndex) {
+        int previewIndex = slotIndex - CRAFTING_SLOT_START;
+        if (previewIndex < 0 || previewIndex >= 9) {
+            return;
+        }
+        java.util.List<java.util.Optional<Identifier>> updatedTags = new java.util.ArrayList<>(this.selectedIngredientTags);
+        updatedTags.set(previewIndex, java.util.Optional.empty());
+        this.selectedIngredientTags = java.util.List.copyOf(updatedTags);
+    }
+
+    private static java.util.List<java.util.Optional<Identifier>> emptyIngredientTags() {
+        return java.util.List.of(
+            java.util.Optional.empty(), java.util.Optional.empty(), java.util.Optional.empty(),
+            java.util.Optional.empty(), java.util.Optional.empty(), java.util.Optional.empty(),
+            java.util.Optional.empty(), java.util.Optional.empty(), java.util.Optional.empty()
+        );
     }
 
     @Override

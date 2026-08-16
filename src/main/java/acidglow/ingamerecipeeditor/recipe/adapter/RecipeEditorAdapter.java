@@ -11,7 +11,5 @@ import net.minecraft.world.item.crafting.Recipe;
 public interface RecipeEditorAdapter {
     Identifier recipeTypeId();
 
-    RecipeEditorLayout layout();
-
     Optional<Identifier> outputItemId(Recipe<?> recipe);
 }

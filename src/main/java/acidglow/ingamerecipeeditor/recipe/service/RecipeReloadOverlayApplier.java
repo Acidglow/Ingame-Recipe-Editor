@@ -33,15 +33,6 @@ public final class RecipeReloadOverlayApplier {
             recipeJsons.remove(tombstone.key().identifier());
         }
 
-        for (RecipeState.CustomOverride override : overlay.overrides()) {
-            Identifier id = override.key().identifier();
-            if (recipeJsons.containsKey(id)) {
-                recipeJsons.put(id, override.replacement().recipeJson());
-            } else {
-                AcidglowsIngameRecipeEditor.LOGGER.warn("Cannot apply recipe override {} because its default recipe is unavailable", id);
-            }
-        }
-
         for (RecipeState.NewCustomRecipe customRecipe : overlay.customRecipes()) {
             Identifier id = customRecipe.key().identifier();
             if (recipeJsons.putIfAbsent(id, customRecipe.snapshot().recipeJson()) != null) {
@@ -57,7 +48,7 @@ public final class RecipeReloadOverlayApplier {
         }
     }
 
-    private static boolean recipeProducesHiddenItem(JsonElement recipeJson, java.util.Set<Identifier> hiddenItems) {
+    static boolean recipeProducesHiddenItem(JsonElement recipeJson, java.util.Set<Identifier> hiddenItems) {
         if (!recipeJson.isJsonObject()) {
             return false;
         }

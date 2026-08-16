@@ -19,7 +19,8 @@ public record RecipeEditorSelectionPayload(
     public enum Action {
         REMOVE,
         RESTORE_DEFAULT,
-        NO_DEFAULT
+        /** No live or explicitly selected removed recipe is available for the button. */
+        NONE
     }
 
     public static final Type<RecipeEditorSelectionPayload> TYPE = new Type<>(

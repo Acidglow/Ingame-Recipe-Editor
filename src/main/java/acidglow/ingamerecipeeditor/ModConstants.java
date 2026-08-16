@@ -8,7 +8,7 @@ package acidglow.ingamerecipeeditor;
  */
 public final class ModConstants {
     public static final String MOD_ID = "acidglows_ingame_recipe_editor";
-    public static final String NETWORK_VERSION = "1";
+    public static final String NETWORK_VERSION = "3";
     public static final String EDITOR_COMMAND = "recipeeditor";
 
     private ModConstants() {

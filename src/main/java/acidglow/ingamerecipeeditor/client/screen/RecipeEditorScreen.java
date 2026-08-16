@@ -430,24 +430,14 @@ public final class RecipeEditorScreen extends AbstractContainerScreen<RecipeEdit
         ClientRecipeEditorPayloads.activeSelection(this.menu.containerId)
             .filter(this::selectionMatchesCurrentRecipeTypeAndOutput)
             .ifPresent(selection -> {
-            if (selection.action() != RecipeEditorSelectionPayload.Action.NO_DEFAULT) {
-                if (selection.action() == RecipeEditorSelectionPayload.Action.REMOVE) {
-                    this.clearPreviewImmediately();
-                } else {
-                    this.clearPreviewImmediately();
-                }
+            if (selection.action() == RecipeEditorSelectionPayload.Action.REMOVE
+                || selection.action() == RecipeEditorSelectionPayload.Action.RESTORE_DEFAULT) {
                 this.sendToServer(new MutateRecipePayload(
                     selection.recipeId(), selection.recipeTypeId(),
                     selection.action() == RecipeEditorSelectionPayload.Action.RESTORE_DEFAULT
                 ));
             }
         });
-    }
-
-    /** Clears the visual draft before the server begins a remove or restore reload. */
-    private void clearPreviewImmediately() {
-        this.menu.setCraftingPreview(List.of(), 0);
-        this.menu.setRecipeNavigation(0, 0);
     }
 
     private void updateRemoveButton() {
@@ -458,12 +448,13 @@ public final class RecipeEditorScreen extends AbstractContainerScreen<RecipeEdit
             .filter(this::selectionMatchesCurrentRecipeTypeAndOutput)
             .map(RecipeEditorSelectionPayload::action)
             .orElse(null);
-        Component label = switch (action == null ? RecipeEditorSelectionPayload.Action.REMOVE : action) {
+        Component label = switch (action == null ? RecipeEditorSelectionPayload.Action.NONE : action) {
             case REMOVE -> Component.translatable("screen.acidglows_ingame_recipe_editor.remove");
             case RESTORE_DEFAULT -> Component.translatable("screen.acidglows_ingame_recipe_editor.restore_default_recipe");
-            case NO_DEFAULT -> Component.translatable("screen.acidglows_ingame_recipe_editor.no_default_recipe");
+            case NONE -> Component.translatable("screen.acidglows_ingame_recipe_editor.remove");
         };
-        this.removeButton.active = action != null && action != RecipeEditorSelectionPayload.Action.NO_DEFAULT;
+        this.removeButton.active = action == RecipeEditorSelectionPayload.Action.REMOVE
+            || action == RecipeEditorSelectionPayload.Action.RESTORE_DEFAULT;
         this.removeButton.setIcon(action == RecipeEditorSelectionPayload.Action.RESTORE_DEFAULT
             ? CompactIconButton.Icon.RESTORE
             : CompactIconButton.Icon.REMOVE);

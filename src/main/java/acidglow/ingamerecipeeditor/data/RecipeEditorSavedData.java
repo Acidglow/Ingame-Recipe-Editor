@@ -19,7 +19,7 @@ import acidglow.ingamerecipeeditor.recipe.service.RecipeOverlay;
 
 /** Versioned, overworld-scoped persistence for all editor-owned recipe state. */
 public final class RecipeEditorSavedData extends SavedData {
-    public static final int CURRENT_SCHEMA_VERSION = 1;
+    public static final int CURRENT_SCHEMA_VERSION = 2;
     public static final SavedDataType<RecipeEditorSavedData> TYPE = new SavedDataType<RecipeEditorSavedData>(
         Identifier.fromNamespaceAndPath(ModConstants.MOD_ID, "recipe_editor"),
         level -> new RecipeEditorSavedData(),
@@ -28,7 +28,6 @@ public final class RecipeEditorSavedData extends SavedData {
 
     private int schemaVersion;
     private List<PersistedRecipeSnapshot> defaults;
-    private List<PersistedRecipeOverride> overrides;
     private List<PersistedRecipeSnapshot> customRecipes;
     private List<PersistedRecipeSnapshot> tombstones;
     private Set<Identifier> hiddenItems;
@@ -40,36 +39,34 @@ public final class RecipeEditorSavedData extends SavedData {
     private RecipeEditorSavedData(
         int schemaVersion,
         List<PersistedRecipeSnapshot> defaults,
-        List<PersistedRecipeOverride> overrides,
         List<PersistedRecipeSnapshot> customRecipes,
         List<PersistedRecipeSnapshot> tombstones,
-        List<Identifier> hiddenItems
+        List<Identifier> hiddenItems,
+        List<Identifier> purgedItems
     ) {
         this.schemaVersion = schemaVersion;
         this.defaults = List.copyOf(defaults);
-        this.overrides = List.copyOf(overrides);
         this.customRecipes = List.copyOf(customRecipes);
         this.tombstones = List.copyOf(tombstones);
         this.hiddenItems = new LinkedHashSet<>(hiddenItems);
+        // Versions built during development briefly called this stronger hide
+        // mode "purged". Preserve any such saved IDs as ordinary hidden items.
+        this.hiddenItems.addAll(purgedItems);
     }
 
     private static Codec<RecipeEditorSavedData> codec(ServerLevel level) {
         return RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.optionalFieldOf("schema_version", CURRENT_SCHEMA_VERSION).forGetter(data -> data.schemaVersion),
             PersistedRecipeSnapshot.CODEC.listOf().optionalFieldOf("defaults", List.of()).forGetter(data -> data.defaults),
-            PersistedRecipeOverride.CODEC.listOf().optionalFieldOf("overrides", List.of()).forGetter(data -> data.overrides),
             PersistedRecipeSnapshot.CODEC.listOf().optionalFieldOf("custom_recipes", List.of()).forGetter(data -> data.customRecipes),
             PersistedRecipeSnapshot.CODEC.listOf().optionalFieldOf("tombstones", List.of()).forGetter(data -> data.tombstones),
-            Identifier.CODEC.listOf().optionalFieldOf("hidden_items", List.of()).forGetter(data -> List.copyOf(data.hiddenItems))
+            Identifier.CODEC.listOf().optionalFieldOf("hidden_items", List.of()).forGetter(data -> List.copyOf(data.hiddenItems)),
+            Identifier.CODEC.listOf().optionalFieldOf("purged_items", List.of()).forGetter(data -> List.of())
         ).apply(instance, RecipeEditorSavedData::new));
     }
 
     public static RecipeEditorSavedData get(ServerLevel level) {
         return level.getServer().overworld().getDataStorage().computeIfAbsent(TYPE);
-    }
-
-    public int schemaVersion() {
-        return schemaVersion;
     }
 
     public Set<Identifier> hiddenItems() {
@@ -85,9 +82,6 @@ public final class RecipeEditorSavedData extends SavedData {
 
     public void replaceRecipeOverlay(RecipeOverlay overlay) {
         defaults = overlay.defaultRecipes().stream().map(state -> PersistedRecipeSnapshot.from(state.snapshot())).toList();
-        overrides = overlay.overrides().stream()
-            .map(state -> new PersistedRecipeOverride(PersistedRecipeSnapshot.from(state.defaultSnapshot()), PersistedRecipeSnapshot.from(state.replacement())))
-            .toList();
         customRecipes = overlay.customRecipes().stream().map(state -> PersistedRecipeSnapshot.from(state.snapshot())).toList();
         tombstones = overlay.tombstones().stream().map(state -> PersistedRecipeSnapshot.from(state.defaultSnapshot())).toList();
         schemaVersion = CURRENT_SCHEMA_VERSION;
@@ -96,32 +90,24 @@ public final class RecipeEditorSavedData extends SavedData {
 
     /** Removes every editor-owned recipe change while retaining non-recipe settings such as hidden items. */
     public void restoreAllRecipesToDefault() {
-        if (defaults.isEmpty() && overrides.isEmpty() && customRecipes.isEmpty() && tombstones.isEmpty()) {
+        if (defaults.isEmpty() && customRecipes.isEmpty() && tombstones.isEmpty()) {
             return;
         }
         defaults = List.of();
-        overrides = List.of();
         customRecipes = List.of();
         tombstones = List.of();
         schemaVersion = CURRENT_SCHEMA_VERSION;
         setDirty();
     }
 
-    /** Whether a reload needs to apply a current recipe removal, override, or addition. */
+    /** Whether a reload needs to apply a current recipe removal or addition. */
     public boolean hasActiveRecipeChanges() {
-        return !overrides.isEmpty() || !customRecipes.isEmpty() || !tombstones.isEmpty();
+        return !customRecipes.isEmpty() || !tombstones.isEmpty() || !hiddenItems.isEmpty();
     }
 
     public RecipeOverlay createRecipeOverlay() {
         RecipeOverlay overlay = new RecipeOverlay();
         defaults.forEach(snapshot -> decode(snapshot).ifPresent(overlay::addDefault));
-        overrides.forEach(override -> decode(override.defaultSnapshot()).ifPresent(defaultSnapshot -> {
-            overlay.addDefault(defaultSnapshot);
-            decode(override.replacement()).ifPresentOrElse(
-                overlay::saveOverride,
-                () -> AcidglowsIngameRecipeEditor.LOGGER.warn("Preserving unreadable recipe override {} until it can be restored", override.replacement().recipeId())
-            );
-        }));
         customRecipes.forEach(snapshot -> decode(snapshot).ifPresent(overlay::addCustom));
         tombstones.forEach(snapshot -> decode(snapshot).ifPresent(defaultSnapshot -> {
             overlay.addDefault(defaultSnapshot);
