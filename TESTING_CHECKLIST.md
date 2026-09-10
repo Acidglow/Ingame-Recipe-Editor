@@ -20,7 +20,7 @@ Use a disposable test world and a test player with access to Creative mode and o
 - [x] Run `./gradlew test`; all JUnit tests pass.
 - [x] Run `./gradlew runGameTestServer`; all registered NeoForge GameTests pass.
 - [x] Record the Minecraft, NeoForge, Java, and JEI versions used for the run.
-  - 2026-09-10: Minecraft 26.1.1, NeoForge 26.1.1.15-beta, Java 25, JEI API 29.4.0.23. Unit tests and all supported GameTests passed.
+  - 2026-09-10: Minecraft 26.1, 26.1.1, and 26.1.2; Java 25; matching JEI APIs. Unit tests and all supported GameTests passed on each version.
 
 ### JUnit tests to add
 
