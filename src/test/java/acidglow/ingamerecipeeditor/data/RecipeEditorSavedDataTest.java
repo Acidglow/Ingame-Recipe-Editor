@@ -4,8 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.google.gson.JsonArray;
 import org.junit.jupiter.api.Test;
 import com.google.gson.JsonObject;
+import com.mojang.serialization.JsonOps;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
@@ -48,6 +50,30 @@ class RecipeEditorSavedDataTest {
         assertTrue(data.hasActiveRecipeChanges());
         assertFalse(data.createRecipeOverlay().state(customRecipe.key()).isPresent());
         assertEquals(java.util.Set.of(hiddenItem), data.hiddenItems());
+    }
+
+    @Test
+    void preservesUnreadableSnapshotsWhenSavingOtherRecipeChanges() {
+        JsonObject persistedData = new JsonObject();
+        JsonArray customRecipes = new JsonArray();
+        JsonObject unreadable = new JsonObject();
+        unreadable.addProperty("recipe_id", "test:missing_dependency");
+        unreadable.addProperty("recipe_type", "minecraft:crafting");
+        unreadable.addProperty("output_item", "minecraft:diamond");
+        unreadable.addProperty("recipe_json", "{not valid JSON");
+        customRecipes.add(unreadable);
+        persistedData.add("custom_recipes", customRecipes);
+
+        RecipeEditorSavedData data = RecipeEditorSavedData.codec(null)
+            .parse(JsonOps.INSTANCE, persistedData)
+            .getOrThrow();
+        data.replaceRecipeOverlay(new RecipeOverlay());
+
+        JsonObject encoded = RecipeEditorSavedData.codec(null)
+            .encodeStart(JsonOps.INSTANCE, data)
+            .getOrThrow()
+            .getAsJsonObject();
+        assertEquals(unreadable, encoded.getAsJsonArray("custom_recipes").get(0));
     }
 
     private static RecipeSnapshot snapshot(String recipePath, String outputPath) {

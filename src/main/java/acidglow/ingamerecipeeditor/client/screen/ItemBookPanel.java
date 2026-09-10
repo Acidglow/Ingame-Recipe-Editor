@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -27,6 +28,7 @@ import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
 import acidglow.ingamerecipeeditor.ModConstants;
 import acidglow.ingamerecipeeditor.client.integration.ClientRecipeEditorPayloads;
+import org.lwjgl.glfw.GLFW;
 
 /**
  * A registry-backed item picker for the recipe editor.
@@ -195,9 +197,14 @@ final class ItemBookPanel {
 
     void extractDraggedStack(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
         if (!this.draggedStack.isEmpty()) {
-            graphics.item(this.draggedStack, mouseX - 8, mouseY - 8);
-            graphics.itemDecorations(this.minecraft.font, this.draggedStack, mouseX - 8, mouseY - 8);
+            ItemStack displayStack = draggedDisplayStack(this.draggedStack, this.isShiftDown());
+            graphics.item(displayStack, mouseX - 8, mouseY - 8);
+            graphics.itemDecorations(this.minecraft.font, displayStack, mouseX - 8, mouseY - 8);
         }
+    }
+
+    static ItemStack draggedDisplayStack(ItemStack draggedStack, boolean fullStack) {
+        return draggedStack.copyWithCount(fullStack ? draggedStack.getMaxStackSize() : 1);
     }
 
     /** Draws the item-picker tooltip after the menu so it remains above the UI. */
@@ -518,6 +525,11 @@ final class ItemBookPanel {
 
     private boolean contains(int x, int y, int width, int height, int mouseX, int mouseY) {
         return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
+    }
+
+    private boolean isShiftDown() {
+        return InputConstants.isKeyDown(this.minecraft.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT)
+            || InputConstants.isKeyDown(this.minecraft.getWindow(), GLFW.GLFW_KEY_RIGHT_SHIFT);
     }
 
     private record ItemEntry(Identifier id, ItemStack stack) {

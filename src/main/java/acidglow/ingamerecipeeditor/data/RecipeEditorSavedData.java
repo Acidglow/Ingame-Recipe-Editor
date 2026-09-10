@@ -20,7 +20,7 @@ import acidglow.ingamerecipeeditor.recipe.service.RecipeOverlay;
 /** Versioned, overworld-scoped persistence for all editor-owned recipe state. */
 public final class RecipeEditorSavedData extends SavedData {
     public static final int CURRENT_SCHEMA_VERSION = 2;
-    public static final SavedDataType<RecipeEditorSavedData> TYPE = new SavedDataType<RecipeEditorSavedData>(
+    public static final SavedDataType<RecipeEditorSavedData> TYPE = new SavedDataType<>(
         Identifier.fromNamespaceAndPath(ModConstants.MOD_ID, "recipe_editor"),
         level -> new RecipeEditorSavedData(),
         RecipeEditorSavedData::codec
@@ -30,6 +30,9 @@ public final class RecipeEditorSavedData extends SavedData {
     private List<PersistedRecipeSnapshot> defaults;
     private List<PersistedRecipeSnapshot> customRecipes;
     private List<PersistedRecipeSnapshot> tombstones;
+    private List<PersistedRecipeSnapshot> unreadableDefaults;
+    private List<PersistedRecipeSnapshot> unreadableCustomRecipes;
+    private List<PersistedRecipeSnapshot> unreadableTombstones;
     private Set<Identifier> hiddenItems;
 
     public RecipeEditorSavedData() {
@@ -48,13 +51,14 @@ public final class RecipeEditorSavedData extends SavedData {
         this.defaults = List.copyOf(defaults);
         this.customRecipes = List.copyOf(customRecipes);
         this.tombstones = List.copyOf(tombstones);
+        this.unreadableDefaults = unreadable(defaults);
+        this.unreadableCustomRecipes = unreadable(customRecipes);
+        this.unreadableTombstones = unreadable(tombstones);
         this.hiddenItems = new LinkedHashSet<>(hiddenItems);
-        // Versions built during development briefly called this stronger hide
-        // mode "purged". Preserve any such saved IDs as ordinary hidden items.
         this.hiddenItems.addAll(purgedItems);
     }
 
-    private static Codec<RecipeEditorSavedData> codec(ServerLevel level) {
+    static Codec<RecipeEditorSavedData> codec(ServerLevel ignoredLevel) {
         return RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.optionalFieldOf("schema_version", CURRENT_SCHEMA_VERSION).forGetter(data -> data.schemaVersion),
             PersistedRecipeSnapshot.CODEC.listOf().optionalFieldOf("defaults", List.of()).forGetter(data -> data.defaults),
@@ -80,10 +84,11 @@ public final class RecipeEditorSavedData extends SavedData {
         }
     }
 
+    /** Replaces valid overlay state while retaining snapshots that cannot currently be decoded. */
     public void replaceRecipeOverlay(RecipeOverlay overlay) {
-        defaults = overlay.defaultRecipes().stream().map(state -> PersistedRecipeSnapshot.from(state.snapshot())).toList();
-        customRecipes = overlay.customRecipes().stream().map(state -> PersistedRecipeSnapshot.from(state.snapshot())).toList();
-        tombstones = overlay.tombstones().stream().map(state -> PersistedRecipeSnapshot.from(state.defaultSnapshot())).toList();
+        defaults = withUnreadable(overlay.defaultRecipes().stream().map(state -> PersistedRecipeSnapshot.from(state.snapshot())).toList(), unreadableDefaults);
+        customRecipes = withUnreadable(overlay.customRecipes().stream().map(state -> PersistedRecipeSnapshot.from(state.snapshot())).toList(), unreadableCustomRecipes);
+        tombstones = withUnreadable(overlay.tombstones().stream().map(state -> PersistedRecipeSnapshot.from(state.defaultSnapshot())).toList(), unreadableTombstones);
         schemaVersion = CURRENT_SCHEMA_VERSION;
         setDirty();
     }
@@ -96,6 +101,9 @@ public final class RecipeEditorSavedData extends SavedData {
         defaults = List.of();
         customRecipes = List.of();
         tombstones = List.of();
+        unreadableDefaults = List.of();
+        unreadableCustomRecipes = List.of();
+        unreadableTombstones = List.of();
         schemaVersion = CURRENT_SCHEMA_VERSION;
         setDirty();
     }
@@ -116,10 +124,21 @@ public final class RecipeEditorSavedData extends SavedData {
         return overlay;
     }
 
+    private static List<PersistedRecipeSnapshot> unreadable(Collection<PersistedRecipeSnapshot> snapshots) {
+        return snapshots.stream().filter(snapshot -> snapshot.decode().isEmpty()).toList();
+    }
+
+    private static List<PersistedRecipeSnapshot> withUnreadable(
+        List<PersistedRecipeSnapshot> readable,
+        List<PersistedRecipeSnapshot> unreadable
+    ) {
+        return java.util.stream.Stream.concat(readable.stream(), unreadable.stream()).toList();
+    }
+
     private static Optional<RecipeSnapshot> decode(PersistedRecipeSnapshot snapshot) {
         Optional<RecipeSnapshot> decoded = snapshot.decode();
         if (decoded.isEmpty()) {
-            AcidglowsIngameRecipeEditor.LOGGER.warn("Preserving unreadable recipe snapshot {} until it can be restored", snapshot.recipeId());
+            AcidglowsIngameRecipeEditor.LOGGER.warn("Retaining unreadable recipe snapshot {} until it can be restored", snapshot.recipeId());
         }
         return decoded;
     }

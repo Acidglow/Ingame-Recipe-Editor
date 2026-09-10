@@ -11,6 +11,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
+import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -21,13 +22,11 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.phys.AABB;
 import acidglow.ingamerecipeeditor.data.RecipeEditorSavedData;
 import acidglow.ingamerecipeeditor.menu.RecipeEditorMenu;
 
-/**
- * Removes hidden items from accessible storage and their placed block forms
- * without loading additional chunks. Unloaded chunks are queued when they load.
- */
+/** Removes hidden items from loaded state without force-loading chunks. */
 public final class HiddenItemPurger {
     private static final ArrayDeque<ChunkTarget> PENDING_CHUNKS = new ArrayDeque<>();
     private static final Set<ChunkTarget> QUEUED_CHUNKS = new HashSet<>();
@@ -35,7 +34,7 @@ public final class HiddenItemPurger {
     private HiddenItemPurger() {
     }
 
-    /** Purges loaded stacks now and queues each currently loaded chunk for safe block scanning. */
+    /** Purges loaded stacks now and queues loaded chunks for block and container scanning. */
     public static void purgeAccessibleWorld(MinecraftServer server, Set<Identifier> hiddenItemIds) {
         if (hiddenItemIds.isEmpty()) {
             return;
@@ -46,7 +45,6 @@ public final class HiddenItemPurger {
         }
     }
 
-    /** Removes hidden stacks from online player storage and loaded world drops. */
     public static void purgeLoadedItems(MinecraftServer server, Set<Identifier> hiddenItemIds) {
         if (hiddenItemIds.isEmpty()) {
             return;
@@ -55,15 +53,23 @@ public final class HiddenItemPurger {
             purgePlayerStorage(player, hiddenItemIds);
         }
         for (ServerLevel level : server.getAllLevels()) {
-            for (net.minecraft.world.entity.Entity entity : level.getAllEntities()) {
-                if (entity instanceof ItemEntity itemEntity && isHiddenItem(itemEntity.getItem(), hiddenItemIds)) {
-                    itemEntity.discard();
-                }
+            purgeWorldEntities(level, hiddenItemIds);
+        }
+    }
+
+    public static void purgeWorldEntities(ServerLevel level, Set<Identifier> hiddenItemIds) {
+        if (hiddenItemIds.isEmpty()) {
+            return;
+        }
+        for (net.minecraft.world.entity.Entity entity : level.getAllEntities()) {
+            if (entity instanceof ItemEntity itemEntity && isHiddenItem(itemEntity.getItem(), hiddenItemIds)) {
+                itemEntity.discard();
+            } else if (entity instanceof ItemFrame itemFrame && isHiddenItem(itemFrame.getItem(), hiddenItemIds)) {
+                itemFrame.setItem(ItemStack.EMPTY);
             }
         }
     }
 
-    /** Removes hidden stacks from one online player's normal and currently open storage. */
     public static void purgePlayerStorage(ServerPlayer player, Set<Identifier> hiddenItemIds) {
         if (hiddenItemIds.isEmpty()) {
             return;
@@ -71,8 +77,6 @@ public final class HiddenItemPurger {
         purgeContainer(player.getInventory(), hiddenItemIds);
         purgeContainer(player.getEnderChestInventory(), hiddenItemIds);
         for (int slotIndex = 0; slotIndex < player.containerMenu.slots.size(); slotIndex++) {
-            // The editor's input is a ghost selection, not player storage. It
-            // must remain visible so the same Hide control can later reveal it.
             if (player.containerMenu instanceof RecipeEditorMenu && slotIndex == 0) {
                 continue;
             }
@@ -88,7 +92,6 @@ public final class HiddenItemPurger {
         player.containerMenu.broadcastChanges();
     }
 
-    /** Queues a chunk loaded after an item was hidden; it is processed on a later server tick. */
     public static void scheduleChunk(ServerLevel level, LevelChunk chunk) {
         ChunkTarget target = new ChunkTarget(level, chunk.getPos().x(), chunk.getPos().z());
         if (QUEUED_CHUNKS.add(target)) {
@@ -96,7 +99,6 @@ public final class HiddenItemPurger {
         }
     }
 
-    /** Processes one loaded chunk per server tick to avoid a world-wide purge hitch. */
     public static void processNextChunk() {
         ChunkTarget target = PENDING_CHUNKS.pollFirst();
         if (target == null) {
@@ -109,7 +111,12 @@ public final class HiddenItemPurger {
         }
     }
 
-    /** Removes hidden stacks from container block entities and hidden placed blocks in one loaded chunk. */
+    /** Releases queued level references when a server shuts down. */
+    public static void clearQueuedChunks() {
+        PENDING_CHUNKS.clear();
+        QUEUED_CHUNKS.clear();
+    }
+
     public static void purgeChunk(ServerLevel level, LevelChunk chunk, Set<Identifier> hiddenItemIds) {
         if (hiddenItemIds.isEmpty()) {
             return;
@@ -119,6 +126,7 @@ public final class HiddenItemPurger {
                 purgeContainer(container, hiddenItemIds);
             }
         }
+        purgeItemFrames(level, chunk, hiddenItemIds);
 
         int minBlockX = chunk.getPos().getMinBlockX();
         int minBlockZ = chunk.getPos().getMinBlockZ();
@@ -146,6 +154,17 @@ public final class HiddenItemPurger {
     public static boolean isHiddenBlock(BlockState state, Set<Identifier> hiddenItemIds) {
         Item blockItem = state.getBlock().asItem();
         return blockItem != Items.AIR && hiddenItemIds.contains(BuiltInRegistries.ITEM.getKey(blockItem));
+    }
+
+    private static void purgeItemFrames(ServerLevel level, LevelChunk chunk, Set<Identifier> hiddenItemIds) {
+        int minBlockX = chunk.getPos().getMinBlockX();
+        int minBlockZ = chunk.getPos().getMinBlockZ();
+        AABB chunkBounds = new AABB(minBlockX, level.getMinY(), minBlockZ, minBlockX + 16, level.getMaxY(), minBlockZ + 16);
+        for (ItemFrame itemFrame : level.getEntitiesOfClass(ItemFrame.class, chunkBounds)) {
+            if (isHiddenItem(itemFrame.getItem(), hiddenItemIds)) {
+                itemFrame.setItem(ItemStack.EMPTY);
+            }
+        }
     }
 
     private static void purgeContainer(Container container, Set<Identifier> hiddenItemIds) {

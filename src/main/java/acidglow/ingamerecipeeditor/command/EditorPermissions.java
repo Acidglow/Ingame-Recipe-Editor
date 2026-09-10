@@ -5,7 +5,7 @@ import net.minecraft.server.permissions.Permission;
 import net.minecraft.server.permissions.Permissions;
 import acidglow.ingamerecipeeditor.Config;
 
-/** Shared server-side authorization check for opening and mutating the editor. */
+/** Shared server-side authorization checks for the recipe editor. */
 public final class EditorPermissions {
     private EditorPermissions() {
     }
@@ -14,6 +14,11 @@ public final class EditorPermissions {
         return !Config.ONLY_ADMIN_OR_CREATIVE.getAsBoolean()
             || player.isCreative()
             || hasConfiguredOperatorPermission(player);
+    }
+
+    /** Item Book inventory grants always require Creative mode or a level-2 operator. */
+    public static boolean mayReceiveItemBookItems(ServerPlayer player) {
+        return player.isCreative() || player.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER);
     }
 
     private static boolean hasConfiguredOperatorPermission(ServerPlayer player) {

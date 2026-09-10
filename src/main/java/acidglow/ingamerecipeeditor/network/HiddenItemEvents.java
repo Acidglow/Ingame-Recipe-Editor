@@ -2,10 +2,11 @@ package acidglow.ingamerecipeeditor.network;
 
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import acidglow.ingamerecipeeditor.AcidglowsIngameRecipeEditor;
@@ -15,6 +16,8 @@ import acidglow.ingamerecipeeditor.recipe.service.HiddenItemPurger;
 /** Synchronizes and enforces the global hidden-item state as world data becomes available. */
 @EventBusSubscriber(modid = AcidglowsIngameRecipeEditor.MODID)
 public final class HiddenItemEvents {
+    private static int worldEntityPurgeTicks;
+
     private HiddenItemEvents() {
     }
 
@@ -37,6 +40,18 @@ public final class HiddenItemEvents {
     @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
         HiddenItemPurger.processNextChunk();
+        if (++worldEntityPurgeTicks >= 20) {
+            worldEntityPurgeTicks = 0;
+            for (net.minecraft.server.level.ServerLevel level : event.getServer().getAllLevels()) {
+                HiddenItemPurger.purgeWorldEntities(level, RecipeEditorSavedData.get(level).hiddenItems());
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public static void onServerStopped(ServerStoppedEvent event) {
+        worldEntityPurgeTicks = 0;
+        HiddenItemPurger.clearQueuedChunks();
     }
 
     @SubscribeEvent

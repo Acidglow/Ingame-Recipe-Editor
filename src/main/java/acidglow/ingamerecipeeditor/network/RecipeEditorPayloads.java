@@ -241,42 +241,44 @@ public final class RecipeEditorPayloads {
     }
 
     private static void handleSaveCookingRecipe(ServerPlayer player, SaveCookingRecipePayload payload) {
-        if (player == null) {
+        if (!mayUseOpenEditor(player)) {
             return;
         }
-        if (!EditorPermissions.mayUseEditor(player)) {
-            rejectMutation(player, "You do not have permission to modify recipes.");
+        RecipeEditorMenu menu = (RecipeEditorMenu)player.containerMenu;
+        if (!menu.isCookingRecipeType() || !editorRecipeTypeId(menu.recipeType()).equals(payload.recipeTypeId())) {
+            rejectMutation(player, "Select the matching cooking recipe type in the recipe editor.");
             return;
         }
-        if (!isSupportedCookingType(payload.recipeTypeId())) {
-            rejectMutation(player, "Only the supported vanilla cooking recipe types can be created here.");
+        Optional<String> validationError = validateCookingRecipeSave(payload);
+        if (validationError.isPresent()) {
+            rejectMutation(player, validationError.get());
             return;
         }
-        if (!isUsableItem(payload.outputItemId()) || !isUsableItem(payload.inputItemId())) {
-            rejectMutation(player, "Input and output must be registered non-air items.");
+
+        ItemStack outputStack = menu.getSlot(0).getItem();
+        ItemStack inputStack = menu.getSlot(5).getItem();
+        if (outputStack.isEmpty() || inputStack.isEmpty()
+            || !BuiltInRegistries.ITEM.getKey(outputStack.getItem()).equals(payload.outputItemId())
+            || !BuiltInRegistries.ITEM.getKey(inputStack.getItem()).equals(payload.inputItemId())
+            || outputStack.getCount() != payload.outputCount()) {
+            rejectMutation(player, "The cooking recipe request does not match the editor's current items.");
             return;
         }
-        if (payload.outputCount() < 1 || payload.outputCount() > 99) {
-            rejectMutation(player, "Output count must be between 1 and 99.");
-            return;
-        }
-        if (!Float.isFinite(payload.experience()) || payload.experience() < 0.0F || payload.experience() > 100.0F) {
-            rejectMutation(player, "Experience must be between 0 and 100.");
-            return;
-        }
-        if (payload.cookingTime() < 1 || payload.cookingTime() > 72_000) {
-            rejectMutation(player, "Cooking time must be between 1 and 72000 ticks.");
+        int expectedCookingTime = switch (menu.recipeType()) {
+            case RecipeEditorMenu.TYPE_FURNACE -> 200;
+            case RecipeEditorMenu.TYPE_BLAST_FURNACE -> 100;
+            case RecipeEditorMenu.TYPE_CAMPFIRE -> 600;
+            default -> throw new IllegalStateException("Unsupported cooking editor type");
+        };
+        if (payload.experience() != 0.0F || payload.cookingTime() != expectedCookingTime) {
+            rejectMutation(player, "The cooking recipe request has unsupported experience or cooking time.");
             return;
         }
 
         Item input = BuiltInRegistries.ITEM.getValue(payload.inputItemId());
         Item output = BuiltInRegistries.ITEM.getValue(payload.outputItemId());
-        Optional<net.minecraft.resources.Identifier> selectedInputTag = player.containerMenu instanceof RecipeEditorMenu menu
-            ? menu.selectedIngredientTag(5)
-            : Optional.empty();
-        if (player.containerMenu instanceof RecipeEditorMenu menu
-            && menu.hasDisplayedRecipeBaseline()
-            && !menu.hasDisplayedRecipeChanges()) {
+        Optional<net.minecraft.resources.Identifier> selectedInputTag = menu.selectedIngredientTag(5);
+        if (menu.hasDisplayedRecipeBaseline() && !menu.hasDisplayedRecipeChanges()) {
             rejectMutation(player, "The displayed recipe has no changes to save.");
             return;
         }
@@ -368,6 +370,10 @@ public final class RecipeEditorPayloads {
         }
         if (!(player.containerMenu instanceof acidglow.ingamerecipeeditor.menu.RecipeEditorMenu menu)) {
             rejectMutation(player, "The recipe editor is no longer open.");
+            return;
+        }
+        if (payload.slotIndex() >= 10 && !EditorPermissions.mayReceiveItemBookItems(player)) {
+            rejectMutation(player, "Only Creative-mode players and operators can copy Item Book items into inventory.");
             return;
         }
         if (menu.isCookingRecipeType() && payload.slotIndex() >= 1 && payload.slotIndex() < 10 && payload.slotIndex() != 5) {
@@ -491,6 +497,26 @@ public final class RecipeEditorPayloads {
             net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
                 new RecipeEditorSelectionPayload(menu.containerId, key.identifier(), key.recipeTypeId(), outputItemId, action));
         }
+    }
+
+    /** Returns the server rejection message for an invalid cooking save, or empty when the payload is valid. */
+    public static Optional<String> validateCookingRecipeSave(SaveCookingRecipePayload payload) {
+        if (!isSupportedCookingType(payload.recipeTypeId())) {
+            return Optional.of("Only the supported vanilla cooking recipe types can be created here.");
+        }
+        if (!isUsableItem(payload.outputItemId()) || !isUsableItem(payload.inputItemId())) {
+            return Optional.of("Input and output must be registered non-air items.");
+        }
+        if (payload.outputCount() < 1 || payload.outputCount() > 99) {
+            return Optional.of("Output count must be between 1 and 99.");
+        }
+        if (!Float.isFinite(payload.experience()) || payload.experience() < 0.0F || payload.experience() > 100.0F) {
+            return Optional.of("Experience must be between 0 and 100.");
+        }
+        if (payload.cookingTime() < 1 || payload.cookingTime() > 72_000) {
+            return Optional.of("Cooking time must be between 1 and 72000 ticks.");
+        }
+        return Optional.empty();
     }
 
     /** Clears the Remove Recipe button without selecting a deleted default to restore. */
