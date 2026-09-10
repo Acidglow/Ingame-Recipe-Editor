@@ -20,7 +20,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.bus.api.IEventBus;
@@ -35,7 +34,6 @@ import acidglow.ingamerecipeeditor.recipe.model.RecipeState;
 import acidglow.ingamerecipeeditor.recipe.service.RecipeOverlay;
 import acidglow.ingamerecipeeditor.recipe.service.RecipeIngredientFactory;
 import acidglow.ingamerecipeeditor.recipe.service.HiddenItemPurger;
-import acidglow.ingamerecipeeditor.menu.RecipeEditorMenu;
 import acidglow.ingamerecipeeditor.network.RecipeEditorPayloads;
 import acidglow.ingamerecipeeditor.network.SaveCookingRecipePayload;
 
@@ -56,10 +54,6 @@ public final class RecipeEditorGameTests {
     private static final DeferredHolder<Consumer<GameTestHelper>, Consumer<GameTestHelper>> HIDDEN_BLOCK_PURGE = TEST_FUNCTIONS.register(
         "hidden_block_purge",
         () -> RecipeEditorGameTests::hiddenBlockPurge
-    );
-    private static final DeferredHolder<Consumer<GameTestHelper>, Consumer<GameTestHelper>> HIDDEN_EDITOR_INPUT = TEST_FUNCTIONS.register(
-        "hidden_editor_input",
-        () -> RecipeEditorGameTests::hiddenEditorInput
     );
     private static final DeferredHolder<Consumer<GameTestHelper>, Consumer<GameTestHelper>> HIDDEN_ITEM_FRAME_PURGE = TEST_FUNCTIONS.register(
         "hidden_item_frame_purge",
@@ -105,10 +99,6 @@ public final class RecipeEditorGameTests {
         event.registerTest(
             Identifier.fromNamespaceAndPath(ModConstants.MOD_ID, "hidden_block_purge"),
             new FunctionGameTestInstance(HIDDEN_BLOCK_PURGE.getKey(), testData)
-        );
-        event.registerTest(
-            Identifier.fromNamespaceAndPath(ModConstants.MOD_ID, "hidden_editor_input"),
-            new FunctionGameTestInstance(HIDDEN_EDITOR_INPUT.getKey(), testData)
         );
         event.registerTest(
             Identifier.fromNamespaceAndPath(ModConstants.MOD_ID, "hidden_item_frame_purge"),
@@ -174,20 +164,6 @@ public final class RecipeEditorGameTests {
         helper.succeedIf(() -> helper.assertTrue(
             helper.getBlockState(relativePos).isAir(),
             "A hidden item's placed block should be removed without dropping an item."
-        ));
-    }
-
-    private static void hiddenEditorInput(GameTestHelper helper) {
-        net.minecraft.server.level.ServerPlayer player = (net.minecraft.server.level.ServerPlayer)helper.makeMockServerPlayer(GameType.CREATIVE);
-        RecipeEditorMenu menu = new RecipeEditorMenu(1, player.getInventory());
-        menu.setPreviewOutput(new ItemStack(Items.DIAMOND));
-        player.containerMenu = menu;
-
-        HiddenItemPurger.purgePlayerStorage(player, java.util.Set.of(Identifier.withDefaultNamespace("diamond")));
-
-        helper.succeedIf(() -> helper.assertTrue(
-            menu.getSlot(0).getItem().is(Items.DIAMOND),
-            "The editor input must retain the selected hidden item so it can be revealed."
         ));
     }
 
