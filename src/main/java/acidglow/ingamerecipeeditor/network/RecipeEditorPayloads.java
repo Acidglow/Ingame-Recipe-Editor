@@ -155,21 +155,21 @@ public final class RecipeEditorPayloads {
         }
     }
 
-    private static void completeMutation(ServerPlayer player, java.util.concurrent.CompletableFuture<Void> reload, String successMessage) {
-        completeMutation(player, reload, successMessage, () -> { });
+    private static void completeMutation(ServerPlayer player, java.util.concurrent.CompletableFuture<Void> operation, String successMessage) {
+        completeMutation(player, operation, successMessage, () -> { });
     }
 
     private static void completeMutation(
         ServerPlayer player,
-        java.util.concurrent.CompletableFuture<Void> reload,
+        java.util.concurrent.CompletableFuture<Void> operation,
         String successMessage,
         Runnable successAction
     ) {
-        reload.whenComplete((ignored, error) -> player.level().getServer().execute(() -> {
+        operation.whenComplete((ignored, error) -> player.level().getServer().execute(() -> {
             if (error != null) {
-                AcidglowsIngameRecipeEditor.LOGGER.error("Recipe editor reload failed after a mutation requested by {}", player.getPlainTextName(), error);
+                AcidglowsIngameRecipeEditor.LOGGER.error("Recipe editor update failed after a mutation requested by {}", player.getPlainTextName(), error);
                 net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
-                    new EditorOperationResultPayload(false, "The reload failed. The saved change will be retried on the next reload."));
+                    new EditorOperationResultPayload(false, "The update failed. The saved change will be retried on the next server reload."));
             } else {
                 net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
                     new EditorOperationResultPayload(true, successMessage));
