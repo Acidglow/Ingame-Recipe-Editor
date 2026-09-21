@@ -67,6 +67,10 @@ public final class RecipeEditorGameTests {
         "invalid_cooking_save_rejected",
         () -> RecipeEditorGameTests::invalidCookingSaveRejected
     );
+    private static final DeferredHolder<Consumer<GameTestHelper>, Consumer<GameTestHelper>> RUNTIME_RECIPE_UPDATE = TEST_FUNCTIONS.register(
+        "runtime_recipe_update",
+        () -> RecipeEditorGameTests::runtimeRecipeUpdate
+    );
 
     private RecipeEditorGameTests() {
     }
@@ -111,6 +115,10 @@ public final class RecipeEditorGameTests {
         event.registerTest(
             Identifier.fromNamespaceAndPath(ModConstants.MOD_ID, "invalid_cooking_save_rejected"),
             new FunctionGameTestInstance(INVALID_COOKING_SAVE_REJECTED.getKey(), testData)
+        );
+        event.registerTest(
+            Identifier.fromNamespaceAndPath(ModConstants.MOD_ID, "runtime_recipe_update"),
+            new FunctionGameTestInstance(RUNTIME_RECIPE_UPDATE.getKey(), testData)
         );
     }
 
@@ -242,6 +250,35 @@ public final class RecipeEditorGameTests {
                 "Invalid cooking saves must not change hidden-item state."
             );
         });
+    }
+
+    private static void runtimeRecipeUpdate(GameTestHelper helper) {
+        ResourceKey<net.minecraft.world.item.crafting.Recipe<?>> vanillaKey = ResourceKey.create(
+            Registries.RECIPE, Identifier.withDefaultNamespace("stick")
+        );
+        RecipeKey vanillaRecipeKey = new RecipeKey(vanillaKey, Identifier.withDefaultNamespace("crafting"));
+        var editorService = new acidglow.ingamerecipeeditor.recipe.service.ServerRecipeEditorService(
+            acidglow.ingamerecipeeditor.recipe.adapter.BuiltinRecipeEditorAdapters.create()
+        );
+        RecipeSnapshot vanillaSnapshot = editorService.capture(helper.getLevel(), vanillaRecipeKey)
+            .orElseThrow(() -> new AssertionError("The vanilla stick recipe should be editable in this GameTest world."));
+        RecipeKey customKey = new RecipeKey(
+            ResourceKey.create(Registries.RECIPE, Identifier.fromNamespaceAndPath(ModConstants.MOD_ID, "custom/gametest_stick")),
+            Identifier.withDefaultNamespace("crafting")
+        );
+        RecipeSnapshot customSnapshot = new RecipeSnapshot(customKey, vanillaSnapshot.outputItemId(), vanillaSnapshot.recipeJson());
+
+        editorService.addCustom(helper.getLevel(), customSnapshot).join();
+        helper.assertTrue(
+            helper.getLevel().recipeAccess().byKey(customKey.recipeId()).isPresent(),
+            "A saved custom recipe must be immediately available without a data-pack reload."
+        );
+        editorService.remove(helper.getLevel(), customKey).join();
+
+        helper.succeedIf(() -> helper.assertTrue(
+            helper.getLevel().recipeAccess().byKey(customKey.recipeId()).isEmpty(),
+            "Removing a custom recipe must immediately update the live recipe index."
+        ));
     }
 
     private static RecipeSnapshot snapshot(String recipePath, String outputPath) {

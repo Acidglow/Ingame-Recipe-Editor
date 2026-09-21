@@ -11,10 +11,10 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import acidglow.ingamerecipeeditor.AcidglowsIngameRecipeEditor;
 import acidglow.ingamerecipeeditor.ModConstants;
-import acidglow.ingamerecipeeditor.data.RecipeEditorSavedData;
 import acidglow.ingamerecipeeditor.menu.RecipeEditorMenu;
 import acidglow.ingamerecipeeditor.network.RecipeEditorPayloads;
-import acidglow.ingamerecipeeditor.recipe.service.RecipeReloadService;
+import acidglow.ingamerecipeeditor.recipe.adapter.BuiltinRecipeEditorAdapters;
+import acidglow.ingamerecipeeditor.recipe.service.ServerRecipeEditorService;
 
 /** Registers the owner-confirmed editor command. */
 @EventBusSubscriber(modid = AcidglowsIngameRecipeEditor.MODID)
@@ -49,7 +49,7 @@ public final class RecipeEditorCommand {
         return 1;
     }
 
-    /** Clears every persisted recipe overlay entry, then reloads the server's original data-pack recipes. */
+    /** Clears every persisted recipe overlay entry and updates only the live recipe index. */
     private static int restoreAll(CommandContext<CommandSourceStack> context) {
         ServerPlayer player = context.getSource().getPlayer();
         if (player == null) {
@@ -61,9 +61,9 @@ public final class RecipeEditorCommand {
             return 0;
         }
 
-        RecipeEditorSavedData.get(player.level()).restoreAllRecipesToDefault();
         var server = player.level().getServer();
-        RecipeReloadService.reload(server).whenComplete((ignored, error) -> server.execute(() -> {
+        ServerRecipeEditorService editorService = new ServerRecipeEditorService(BuiltinRecipeEditorAdapters.create());
+        editorService.restoreAll(player.level()).whenComplete((ignored, error) -> server.execute(() -> {
             if (error != null) {
                 AcidglowsIngameRecipeEditor.LOGGER.error("Could not restore all recipe-editor changes", error);
                 player.sendSystemMessage(Component.translatable("command.acidglows_ingame_recipe_editor.restore_all_failed"));

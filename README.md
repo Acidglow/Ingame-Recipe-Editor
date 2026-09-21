@@ -1,6 +1,6 @@
 # Acidglow's Ingame Recipe Editor
 
-A server-authoritative NeoForge mod for Minecraft 26.1, 26.1.1, and 26.1.2. Permitted players can inspect, create, remove, restore, and hide recipes without leaving the game. Recipe changes are stored with the world and reapplied whenever recipes reload.
+A server-authoritative NeoForge mod for Minecraft 26.1, 26.1.1, and 26.1.2. Permitted players can inspect, create, remove, restore, and hide recipes without leaving the game. Recipe changes update the live recipe index immediately, are stored with the world, and are reapplied whenever recipes reload.
 
 ## Version branches
 

@@ -3,7 +3,7 @@ package acidglow.ingamerecipeeditor.recipe.service;
 import java.util.concurrent.CompletableFuture;
 import net.minecraft.server.MinecraftServer;
 
-/** Requests the public server resource reload required after an editor mutation. */
+/** Requests a full data-pack reload only when applying hidden-item recipe filters. */
 public final class RecipeReloadService {
     private RecipeReloadService() {
     }

@@ -27,6 +27,12 @@ base {
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(25)
 
+minecraft {
+    accessTransformers {
+        file('src/main/resources/META-INF/accesstransformer.cfg')
+    }
+}
+
 runs {
     configureEach {
         systemProperty 'forge.logging.markers', 'REGISTRIES'
@@ -59,6 +65,10 @@ dependencies {
     testRuntimeOnly "org.junit.platform:junit-platform-launcher:1.13.2"
     compileOnly "mezz.jei:jei-${minecraft_version}-common-api:${jei_version}"
     compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
+
+    // Local compatibility mods for client, server, and GameTest development runs.
+    // runtimeOnly keeps them out of the editor's compiled API and release JAR.
+    runtimeOnly fileTree(dir: 'libs', include: ['*.jar'])
 }
 
 tasks.withType(ProcessResources).configureEach {

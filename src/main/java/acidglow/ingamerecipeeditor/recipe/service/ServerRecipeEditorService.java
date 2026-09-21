@@ -35,7 +35,7 @@ public final class ServerRecipeEditorService {
         RecipeOverlay overlay = savedData.createRecipeOverlay();
         overlay.addCustom(snapshot);
         savedData.replaceRecipeOverlay(overlay);
-        return RecipeReloadService.reload(level.getServer());
+        return updateRuntime(() -> RecipeRuntimeService.addCustom(level.getServer(), snapshot, savedData.hiddenItems()));
     }
 
     public CompletableFuture<Void> remove(ServerLevel level, RecipeKey key) {
@@ -46,15 +46,33 @@ public final class ServerRecipeEditorService {
         }
         overlay.remove(key);
         savedData.replaceRecipeOverlay(overlay);
-        return RecipeReloadService.reload(level.getServer());
+        return updateRuntime(() -> RecipeRuntimeService.remove(level.getServer(), key));
     }
 
     public CompletableFuture<Void> restoreDefault(ServerLevel level, RecipeKey key) {
         RecipeEditorSavedData savedData = RecipeEditorSavedData.get(level);
         RecipeOverlay overlay = savedData.createRecipeOverlay();
         overlay.restoreDefault(key);
+        RecipeSnapshot restored = overlay.defaultRecipes().stream()
+            .filter(recipe -> recipe.snapshot().key().equals(key))
+            .findFirst()
+            .orElseThrow(() -> new IllegalStateException("Restored default recipe was not retained"))
+            .snapshot();
         savedData.replaceRecipeOverlay(overlay);
-        return RecipeReloadService.reload(level.getServer());
+        return updateRuntime(() -> RecipeRuntimeService.restoreDefault(level.getServer(), restored, savedData.hiddenItems()));
+    }
+
+    /** Restores every saved default and removes every saved custom recipe without a data-pack reload. */
+    public CompletableFuture<Void> restoreAll(ServerLevel level) {
+        RecipeEditorSavedData savedData = RecipeEditorSavedData.get(level);
+        RecipeOverlay overlay = savedData.createRecipeOverlay();
+        try {
+            RecipeRuntimeService.restoreAll(level.getServer(), overlay, savedData.hiddenItems());
+            savedData.restoreAllRecipesToDefault();
+            return CompletableFuture.completedFuture(null);
+        } catch (RuntimeException error) {
+            return CompletableFuture.failedFuture(error);
+        }
     }
 
     private Optional<RecipeSnapshot> capture(ServerLevel level, RecipeHolder<?> holder) {
@@ -72,5 +90,14 @@ public final class ServerRecipeEditorService {
 
         return RecipeJsonCodec.encode(holder, outputItemId.get(), level.registryAccess())
             .resultOrPartial(error -> AcidglowsIngameRecipeEditor.LOGGER.warn("Could not snapshot recipe {}: {}", key.identifier(), error));
+    }
+
+    private static CompletableFuture<Void> updateRuntime(Runnable update) {
+        try {
+            update.run();
+            return CompletableFuture.completedFuture(null);
+        } catch (RuntimeException error) {
+            return CompletableFuture.failedFuture(error);
+        }
     }
 }
